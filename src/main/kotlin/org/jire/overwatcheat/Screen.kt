@@ -19,11 +19,21 @@
 package org.jire.overwatcheat
 
 import java.awt.Dimension
+import java.awt.GraphicsEnvironment
 import java.awt.Toolkit
 
 object Screen {
 
-    private val DIMENSION: Dimension = Toolkit.getDefaultToolkit().screenSize
+    private val PRIMARY_DISPLAY = GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice
+
+    /**
+     * Prefer the primary display's mode so the capture box remains centered on a
+     * single monitor (e.g., 2560x1440) even when the virtual desktop spans
+     * multiple screens. Falls back to the virtual screen size if no mode info
+     * is available.
+     */
+    private val DIMENSION: Dimension = PRIMARY_DISPLAY.displayMode?.let { Dimension(it.width, it.height) }
+        ?: Toolkit.getDefaultToolkit().screenSize
 
     val WIDTH = DIMENSION.width
     val HEIGHT = DIMENSION.height

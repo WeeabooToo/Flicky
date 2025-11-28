@@ -36,6 +36,8 @@ object Settings {
     val aimDurationMillis by FloatSetting("aim_duration_millis", 3.5F)
     val aimDurationMultiplierBase by FloatSetting("aim_duration_multiplier_base", 1.0F)
     val aimDurationMultiplierMax by FloatSetting("aim_duration_multiplier_max", 2.0F)
+    val aimKP by FloatSetting("aim_kp", 0.5F)
+    val alpha by FloatSetting("aim_alpha", 0.5F)
     val aimMaxMovePixels by IntSetting("aim_max_move_pixels", 3)
     val aimJitterPercent by IntSetting("aim_jitter_percent", 0)
     val aimMinTargetWidth by IntSetting("aim_min_target_width", 8)
