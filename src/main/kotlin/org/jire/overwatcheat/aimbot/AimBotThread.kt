@@ -51,6 +51,13 @@ class AimBotThread(
 
     val random = FastRandom()
 
+    private val alpha = Settings.alpha
+    private val aimKP = Settings.aimKP
+    private val sensitivityScale = 1F / Settings.sensitivity
+    private val jitterPercent = Settings.aimJitterPercent
+    private val maxMoveX = min(maxSnapX, Settings.aimMaxMovePixels)
+    private val maxMoveY = min(maxSnapY, Settings.aimMaxMovePixels)
+
     private var previousErrorX = 0F
     private var previousErrorY = 0F
 
@@ -132,27 +139,25 @@ class AimBotThread(
     }
 
     private fun performAim(dX: Float, dY: Float) {
-        val alpha = Settings.alpha
         val smoothedX = lerp(previousErrorX, dX, alpha)
         val smoothedY = lerp(previousErrorY, dY, alpha)
         previousErrorX = smoothedX
         previousErrorY = smoothedY
 
-        val aimKP = Settings.aimKP
         val moveXFloat = smoothedX * aimKP
         val moveYFloat = smoothedY * aimKP
 
-        val randomSensitivityMultiplier = 1F - (random[Settings.aimJitterPercent] / 100F)
-        val sensitivity = Settings.sensitivity
-        val moveX = (moveXFloat / sensitivity * randomSensitivityMultiplier).roundToInt()
-        val moveY = (moveYFloat / sensitivity * randomSensitivityMultiplier).roundToInt()
+        val randomSensitivityMultiplier =
+            if (jitterPercent == 0) 1F else 1F - (random[jitterPercent] / 100F)
+        val moveX = (moveXFloat * sensitivityScale * randomSensitivityMultiplier).roundToInt()
+        val moveY = (moveYFloat * sensitivityScale * randomSensitivityMultiplier).roundToInt()
 
-        val maxMoveX = min(maxSnapX, Settings.aimMaxMovePixels)
-        val maxMoveY = min(maxSnapY, Settings.aimMaxMovePixels)
         val limitedMoveX = moveX.coerceIn(-maxMoveX, maxMoveX)
         val limitedMoveY = moveY.coerceIn(-maxMoveY, maxMoveY)
 
-        Mouse.move(limitedMoveX, limitedMoveY, mouseId)
+        if (limitedMoveX != 0 || limitedMoveY != 0) {
+            Mouse.move(limitedMoveX, limitedMoveY, mouseId)
+        }
 
         applyFlick(limitedMoveX, limitedMoveY)
     }
