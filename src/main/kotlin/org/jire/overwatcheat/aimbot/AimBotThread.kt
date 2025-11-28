@@ -35,6 +35,7 @@ import org.jire.overwatcheat.util.PreciseSleeper
 import java.util.concurrent.ThreadLocalRandom
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.system.measureNanoTime
 
 class AimBotThread(
@@ -49,6 +50,16 @@ class AimBotThread(
     val aimDurationNanos = (aimDurationMillis * 1_000_000)
 
     val random = FastRandom()
+
+    private val alpha = Settings.alpha
+    private val aimKP = Settings.aimKP
+    private val sensitivityScale = 1F / Settings.sensitivity
+    private val jitterPercent = Settings.aimJitterPercent
+    private val maxMoveX = min(maxSnapX, Settings.aimMaxMovePixels)
+    private val maxMoveY = min(maxSnapY, Settings.aimMaxMovePixels)
+
+    private var previousErrorX = 0F
+    private var previousErrorY = 0F
 
     override fun run() {
         priority = MAX_PRIORITY - 1
@@ -93,58 +104,79 @@ class AimBotThread(
     }
 
     private fun useAimData(aimData: Long) {
-        if (aimData == 0L) return
+        if (aimData == 0L) return resetError()
 
         val dX = calculateDelta(
             aimData, 48,
-            Settings.aimMinTargetWidth, Settings.aimOffsetX, captureCenterX
+            Settings.aimMinTargetWidth, captureCenterX
         )
         val dY = calculateDelta(
             aimData, 16,
-            Settings.aimMinTargetHeight, Settings.aimOffsetY, captureCenterY
+            Settings.aimMinTargetHeight, captureCenterY
         )
-        performAim(dX, dY)
+        if (dX != null && dY != null) {
+            performAim(dX, dY)
+        } else {
+            resetError()
+        }
     }
 
     private fun extractAimData(aimData: Long, shiftBits: Int) = (aimData ushr shiftBits) and 0xFFFF
-    private fun calculateOffset(size: Long, offset: Float) = size / 2 * offset
-    private fun calculateAim(base: Long, offset: Float) = (base + offset).toInt()
-
     private fun calculateDelta(
         aimData: Long,
         shiftBitsBase: Int,
         minimumSize: Int,
-        offset: Float,
         deltaSubtrahend: Int
-    ): Int {
+    ): Float? {
         val low = extractAimData(aimData, shiftBitsBase)
         val high = extractAimData(aimData, shiftBitsBase - 16)
         val size = high - low
-        if (size < minimumSize) return Int.MAX_VALUE
+        if (size < minimumSize) return null
 
-        val deltaOffset = calculateOffset(size, offset)
-        val aimX = calculateAim(low, deltaOffset)
+        val center = (low + high) / 2F
 
-        return aimX - deltaSubtrahend
+        return center - deltaSubtrahend
     }
 
-    private fun performAim(dX: Int, dY: Int) {
-        if (FastAbs(dX) > maxSnapX || FastAbs(dY) > maxSnapY) return
+    private fun performAim(dX: Float, dY: Float) {
+        val smoothedX = lerp(previousErrorX, dX, alpha)
+        val smoothedY = lerp(previousErrorY, dY, alpha)
+        previousErrorX = smoothedX
+        previousErrorY = smoothedY
 
-        val randomSensitivityMultiplier = 1F - (random[Settings.aimJitterPercent] / 100F)
-        val moveX = (dX / Settings.sensitivity * randomSensitivityMultiplier).toInt()
-        val moveY = (dY / Settings.sensitivity * randomSensitivityMultiplier).toInt()
-        Mouse.move(
-            min(Settings.aimMaxMovePixels, moveX),
-            min(Settings.aimMaxMovePixels, moveY),
-            mouseId
-        )
+        val moveXFloat = smoothedX * aimKP
+        val moveYFloat = smoothedY * aimKP
 
-        applyFlick(moveX, moveY)
+        val randomSensitivityMultiplier =
+            if (jitterPercent == 0) 1F else 1F - (random[jitterPercent] / 100F)
+        val moveX = (moveXFloat * sensitivityScale * randomSensitivityMultiplier).roundToInt()
+        val moveY = (moveYFloat * sensitivityScale * randomSensitivityMultiplier).roundToInt()
+
+        val limitedMoveX = moveX.coerceIn(-maxMoveX, maxMoveX)
+        val limitedMoveY = moveY.coerceIn(-maxMoveY, maxMoveY)
+
+        if (limitedMoveX != 0 || limitedMoveY != 0) {
+            Mouse.move(limitedMoveX, limitedMoveY, mouseId)
+        }
+
+        applyFlick(limitedMoveX, limitedMoveY)
+    }
+
+    private fun lerp(start: Float, end: Float, alpha: Float) = start + (end - start) * alpha
+
+    private fun resetError() {
+        previousErrorX = 0F
+        previousErrorY = 0F
+    }
+
+    private inline fun withinFlickThreshold(moveX: Int, moveY: Int, threshold: Int): Boolean {
+        if (FastAbs(moveX) >= threshold) return false
+        return FastAbs(moveY) < threshold
     }
 
     private fun applyFlick(moveX: Int, moveY: Int) {
-        if (flicking && FastAbs(moveX) < flickPixels && FastAbs(moveY) < flickPixels) {
+        val threshold = flickPixels
+        if (flicking && withinFlickThreshold(moveX, moveY, threshold)) {
             flicking = false
             Mouse.click(mouseId)
             preciseSleeper.preciseSleep(flickPauseNanos)

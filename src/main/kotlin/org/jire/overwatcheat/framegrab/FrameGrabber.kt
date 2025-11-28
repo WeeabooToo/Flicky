@@ -19,6 +19,7 @@
 package org.jire.overwatcheat.framegrab
 
 import org.bytedeco.javacv.FFmpegFrameGrabber
+import org.bytedeco.ffmpeg.global.avutil
 
 class FrameGrabber(
     windowTitleSearch: String,
@@ -36,6 +37,11 @@ class FrameGrabber(
         this.imageHeight = imageHeight
         this.format = format
 
+        // Ensure gdigrab captures only the requested region and rate, and in a pixel format
+        // that matches our ByteBuffer processing to avoid extra color conversions.
+        setOption("framerate", frameRate.toString())
+        setOption("video_size", "${imageWidth}x${imageHeight}")
+
         setOption("offset_x", captureOffsetX.toString())
         setOption("offset_y", captureOffsetY.toString())
 
@@ -43,6 +49,8 @@ class FrameGrabber(
         setOption("show_region", "0")
 
         setOption("tune", "zerolatency")
+
+        pixelFormat = avutil.AV_PIX_FMT_BGR24
     }
 
     private companion object {
