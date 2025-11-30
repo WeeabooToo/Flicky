@@ -83,4 +83,24 @@ object Settings {
         }
     }
 
+    fun update(name: String, value: String) {
+        val setting = nameToSetting[name] ?: return
+        setting.parse(value)
+    }
+
+    fun currentValue(name: String): String {
+        val setting = nameToSetting[name] ?: return ""
+        return when (setting) {
+            is IntSetting -> setting.value.toString()
+            is LongSetting -> setting.value.toString()
+            is FloatSetting -> setting.value.toString()
+            is DoubleSetting -> setting.value.toString()
+            is BooleanSetting -> setting.value.toString()
+            is StringSetting -> setting.value
+            is IntArraySetting -> setting.value.joinToString(",")
+            is HexIntArraySetting -> setting.value.joinToString(",") { Integer.toHexString(it) }
+            else -> ""
+        }
+    }
+
 }
