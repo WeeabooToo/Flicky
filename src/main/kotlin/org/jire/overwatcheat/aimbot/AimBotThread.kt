@@ -25,17 +25,13 @@ import org.jire.overwatcheat.Mouse
 import org.jire.overwatcheat.aimbot.AimBotState.aimData
 import org.jire.overwatcheat.aimbot.AimBotState.flicking
 import org.jire.overwatcheat.settings.Settings
-import org.jire.overwatcheat.settings.Settings.aimDurationMillis
-import org.jire.overwatcheat.settings.Settings.aimDurationMultiplierBase
-import org.jire.overwatcheat.settings.Settings.aimDurationMultiplierMax
-import org.jire.overwatcheat.settings.Settings.flickPixels
 import org.jire.overwatcheat.settings.Settings.mouseId
 import org.jire.overwatcheat.util.PreciseSleeper
 import java.util.concurrent.ThreadLocalRandom
+import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.abs
 import kotlin.system.measureNanoTime
 
 class AimBotThread(
@@ -43,20 +39,17 @@ class AimBotThread(
     val maxSnapX: Int, val maxSnapY: Int,
     val preciseSleeper: PreciseSleeper,
     val cpuThreadAffinityIndex: Int,
-    val aimMode: AimMode,
-    val flickPauseNanos: Long,
 ) : Thread("Aim Bot") {
 
-    val aimDurationNanos = (aimDurationMillis * 1_000_000)
+    private val random = FastRandom()
 
-    val random = FastRandom()
-
-    private val alpha = Settings.alpha
-    private val aimKP = Settings.aimKP
-    private val sensitivityScale = 1F / Settings.sensitivity
-    private val jitterPercent = Settings.aimJitterPercent
-    private val maxMoveX = min(maxSnapX, Settings.aimMaxMovePixels)
-    private val maxMoveY = min(maxSnapY, Settings.aimMaxMovePixels)
+    private val sensitivityScale get() = 1F / Settings.sensitivity
+    private val maxMoveX get() = min(maxSnapX, Settings.aimMaxMovePixels)
+    private val maxMoveY get() = min(maxSnapY, Settings.aimMaxMovePixels)
+    private val flickStabilityFrames get() = max(1, Settings.flickStabilityFrames)
+    private val aimMode get() = AimMode[Settings.aimMode] ?: AimMode.TRACKING
+    private val aimDurationNanos get() = (Settings.aimDurationMillis * 1_000_000).toLong()
+    private val flickPauseNanos get() = TimeUnit.MILLISECONDS.toNanos(Settings.flickPause)
 
     private var previousErrorX = 0F
     private var previousErrorY = 0F
@@ -90,8 +83,8 @@ class AimBotThread(
                     useAimData(aimData)
                 }
                 val sleepTimeMultiplier = max(
-                    aimDurationMultiplierMax,
-                    (aimDurationMultiplierBase + tlr.nextFloat())
+                    Settings.aimDurationMultiplierMax,
+                    (Settings.aimDurationMultiplierBase + tlr.nextFloat())
                 )
                 val sleepTime = (aimDurationNanos * sleepTimeMultiplier).toLong() - elapsed
                 if (sleepTime > 100_000) {
@@ -139,16 +132,16 @@ class AimBotThread(
     }
 
     private fun performAim(dX: Float, dY: Float) {
-        val smoothedX = lerp(previousErrorX, dX, alpha)
-        val smoothedY = lerp(previousErrorY, dY, alpha)
+        val smoothedX = lerp(previousErrorX, dX, Settings.alpha)
+        val smoothedY = lerp(previousErrorY, dY, Settings.alpha)
         previousErrorX = smoothedX
         previousErrorY = smoothedY
 
-        val moveXFloat = smoothedX * aimKP
-        val moveYFloat = smoothedY * aimKP
+        val moveXFloat = smoothedX * Settings.aimKP
+        val moveYFloat = smoothedY * Settings.aimKP
 
         val randomSensitivityMultiplier =
-            if (jitterPercent == 0) 1F else 1F - (random[jitterPercent] / 100F)
+            if (Settings.aimJitterPercent == 0) 1F else 1F - (random[Settings.aimJitterPercent] / 100F)
         val moveX = (moveXFloat * sensitivityScale * randomSensitivityMultiplier).roundToInt()
         val moveY = (moveYFloat * sensitivityScale * randomSensitivityMultiplier).roundToInt()
 
@@ -159,7 +152,7 @@ class AimBotThread(
             Mouse.move(limitedMoveX, limitedMoveY, mouseId)
         }
 
-        applyFlick(dX, dY)
+        applyFlick(smoothedX, smoothedY)
     }
 
     private fun lerp(start: Float, end: Float, alpha: Float) = start + (end - start) * alpha
@@ -167,17 +160,31 @@ class AimBotThread(
     private fun resetError() {
         previousErrorX = 0F
         previousErrorY = 0F
+        smoothedFlickErrorMagnitudeSquared = 0F
+        flickFramesWithinThreshold = 0
     }
 
-    private inline fun withinFlickThreshold(errorX: Float, errorY: Float, threshold: Int): Boolean {
-        if (abs(errorX) >= threshold) return false
-        return abs(errorY) < threshold
-    }
+    private var flickFramesWithinThreshold = 0
+    private var smoothedFlickErrorMagnitudeSquared = 0F
 
-    private fun applyFlick(rawErrorX: Float, rawErrorY: Float) {
-        val threshold = flickPixels
-        if (flicking && withinFlickThreshold(rawErrorX, rawErrorY, threshold)) {
+    private fun applyFlick(smoothedErrorX: Float, smoothedErrorY: Float) {
+        val errorMagnitudeSquared = (smoothedErrorX * smoothedErrorX) + (smoothedErrorY * smoothedErrorY)
+        smoothedFlickErrorMagnitudeSquared = lerp(
+            smoothedFlickErrorMagnitudeSquared,
+            errorMagnitudeSquared,
+            Settings.flickReadinessAlpha
+        )
+
+        val thresholdSquared = Settings.flickPixels * Settings.flickPixels
+        if (smoothedFlickErrorMagnitudeSquared < thresholdSquared) {
+            flickFramesWithinThreshold++
+        } else {
+            flickFramesWithinThreshold = 0
+        }
+
+        if (flicking && flickFramesWithinThreshold >= flickStabilityFrames) {
             flicking = false
+            flickFramesWithinThreshold = 0
             Mouse.click(mouseId)
             preciseSleeper.preciseSleep(flickPauseNanos)
         }
