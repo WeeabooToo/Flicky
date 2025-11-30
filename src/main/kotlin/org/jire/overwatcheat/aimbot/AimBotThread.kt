@@ -50,6 +50,16 @@ class AimBotThread(
     private val aimMode get() = AimMode[Settings.aimMode] ?: AimMode.TRACKING
     private val aimDurationNanos get() = (Settings.aimDurationMillis * 1_000_000).toLong()
     private val flickPauseNanos get() = TimeUnit.MILLISECONDS.toNanos(Settings.flickPause)
+    val random = FastRandom()
+
+    private val alpha = Settings.alpha
+    private val aimKP = Settings.aimKP
+    private val sensitivityScale = 1F / Settings.sensitivity
+    private val jitterPercent = Settings.aimJitterPercent
+    private val maxMoveX = min(maxSnapX, Settings.aimMaxMovePixels)
+    private val maxMoveY = min(maxSnapY, Settings.aimMaxMovePixels)
+    private val flickStabilityFrames = max(1, Settings.flickStabilityFrames)
+    private val flickReadinessAlpha = Settings.flickReadinessAlpha
 
     private var previousErrorX = 0F
     private var previousErrorY = 0F
@@ -176,6 +186,10 @@ class AimBotThread(
         )
 
         val thresholdSquared = Settings.flickPixels * Settings.flickPixels
+            flickReadinessAlpha
+        )
+
+        val thresholdSquared = flickPixels * flickPixels
         if (smoothedFlickErrorMagnitudeSquared < thresholdSquared) {
             flickFramesWithinThreshold++
         } else {
