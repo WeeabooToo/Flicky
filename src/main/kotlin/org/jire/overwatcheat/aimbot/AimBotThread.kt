@@ -43,28 +43,23 @@ class AimBotThread(
 
     private val random = FastRandom()
 
-    private data class RuntimeAimSettings(
-        val sensitivityScale: Float,
-        val maxMoveX: Int,
-        val maxMoveY: Int,
-        val flickStabilityFrames: Int,
-        val aimMode: AimMode,
-        val aimDurationNanos: Long,
-        val flickPauseNanos: Long,
-    )
+    private val sensitivityScale get() = 1F / Settings.sensitivity
+    private val maxMoveX get() = min(maxSnapX, Settings.aimMaxMovePixels)
+    private val maxMoveY get() = min(maxSnapY, Settings.aimMaxMovePixels)
+    private val flickStabilityFrames get() = max(1, Settings.flickStabilityFrames)
+    private val aimMode get() = AimMode[Settings.aimMode] ?: AimMode.TRACKING
+    private val aimDurationNanos get() = (Settings.aimDurationMillis * 1_000_000).toLong()
+    private val flickPauseNanos get() = TimeUnit.MILLISECONDS.toNanos(Settings.flickPause)
+    val random = FastRandom()
 
-    @Volatile
-    private var runtimeSettings = snapshotSettings()
-
-    private fun snapshotSettings() = RuntimeAimSettings(
-        sensitivityScale = 1F / Settings.sensitivity,
-        maxMoveX = min(maxSnapX, Settings.aimMaxMovePixels),
-        maxMoveY = min(maxSnapY, Settings.aimMaxMovePixels),
-        flickStabilityFrames = max(1, Settings.flickStabilityFrames),
-        aimMode = AimMode[Settings.aimMode] ?: AimMode.TRACKING,
-        aimDurationNanos = (Settings.aimDurationMillis * 1_000_000).toLong(),
-        flickPauseNanos = TimeUnit.MILLISECONDS.toNanos(Settings.flickPause)
-    )
+    private val alpha = Settings.alpha
+    private val aimKP = Settings.aimKP
+    private val sensitivityScale = 1F / Settings.sensitivity
+    private val jitterPercent = Settings.aimJitterPercent
+    private val maxMoveX = min(maxSnapX, Settings.aimMaxMovePixels)
+    private val maxMoveY = min(maxSnapY, Settings.aimMaxMovePixels)
+    private val flickStabilityFrames = max(1, Settings.flickStabilityFrames)
+    private val flickReadinessAlpha = Settings.flickReadinessAlpha
 
     private var previousErrorX = 0F
     private var previousErrorY = 0F
@@ -148,7 +143,7 @@ class AimBotThread(
         return center - deltaSubtrahend
     }
 
-    private fun performAim(dX: Float, dY: Float, config: RuntimeAimSettings) {
+    private fun performAim(dX: Float, dY: Float) {
         val smoothedX = lerp(previousErrorX, dX, Settings.alpha)
         val smoothedY = lerp(previousErrorY, dY, Settings.alpha)
         previousErrorX = smoothedX
@@ -159,8 +154,8 @@ class AimBotThread(
 
         val randomSensitivityMultiplier =
             if (Settings.aimJitterPercent == 0) 1F else 1F - (random[Settings.aimJitterPercent] / 100F)
-        val moveX = (moveXFloat * config.sensitivityScale * randomSensitivityMultiplier).roundToInt()
-        val moveY = (moveYFloat * config.sensitivityScale * randomSensitivityMultiplier).roundToInt()
+        val moveX = (moveXFloat * sensitivityScale * randomSensitivityMultiplier).roundToInt()
+        val moveY = (moveYFloat * sensitivityScale * randomSensitivityMultiplier).roundToInt()
 
         val limitedMoveX = moveX.coerceIn(-config.maxMoveX, config.maxMoveX)
         val limitedMoveY = moveY.coerceIn(-config.maxMoveY, config.maxMoveY)
@@ -169,7 +164,7 @@ class AimBotThread(
             Mouse.move(limitedMoveX, limitedMoveY, mouseId)
         }
 
-        applyFlick(smoothedX, smoothedY, config)
+        applyFlick(smoothedX, smoothedY)
     }
 
     private fun lerp(start: Float, end: Float, alpha: Float) = start + (end - start) * alpha
@@ -184,7 +179,7 @@ class AimBotThread(
     private var flickFramesWithinThreshold = 0
     private var smoothedFlickErrorMagnitudeSquared = 0F
 
-    private fun applyFlick(smoothedErrorX: Float, smoothedErrorY: Float, config: RuntimeAimSettings) {
+    private fun applyFlick(smoothedErrorX: Float, smoothedErrorY: Float) {
         val errorMagnitudeSquared = (smoothedErrorX * smoothedErrorX) + (smoothedErrorY * smoothedErrorY)
         smoothedFlickErrorMagnitudeSquared = lerp(
             smoothedFlickErrorMagnitudeSquared,
@@ -193,13 +188,17 @@ class AimBotThread(
         )
 
         val thresholdSquared = Settings.flickPixels * Settings.flickPixels
+            flickReadinessAlpha
+        )
+
+        val thresholdSquared = flickPixels * flickPixels
         if (smoothedFlickErrorMagnitudeSquared < thresholdSquared) {
             flickFramesWithinThreshold++
         } else {
             flickFramesWithinThreshold = 0
         }
 
-        if (flicking && flickFramesWithinThreshold >= config.flickStabilityFrames) {
+        if (flicking && flickFramesWithinThreshold >= flickStabilityFrames) {
             flicking = false
             flickFramesWithinThreshold = 0
             Mouse.click(mouseId)
