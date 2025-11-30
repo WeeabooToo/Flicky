@@ -78,6 +78,8 @@ class AimBotThread(
             else null
         try {
             while (true) {
+                runtimeSettings = snapshotSettings()
+                val config = runtimeSettings
                 val elapsed = measureNanoTime {
                     val pressed = Keyboard.keyPressed(Settings.aimKey)
                     if (Settings.toggleInGameUI && wasPressed != pressed) {
@@ -87,16 +89,16 @@ class AimBotThread(
                     if (!pressed) {
                         aimData = 0
                         return@measureNanoTime
-                    } else if (aimMode.flicks) {
+                    } else if (config.aimMode.flicks) {
                         flicking = true
                     }
-                    useAimData(aimData)
+                    useAimData(aimData, config)
                 }
                 val sleepTimeMultiplier = max(
                     Settings.aimDurationMultiplierMax,
                     (Settings.aimDurationMultiplierBase + tlr.nextFloat())
                 )
-                val sleepTime = (aimDurationNanos * sleepTimeMultiplier).toLong() - elapsed
+                val sleepTime = (config.aimDurationNanos * sleepTimeMultiplier).toLong() - elapsed
                 if (sleepTime > 100_000) {
                     preciseSleeper.preciseSleep(sleepTime)
                 }
@@ -106,7 +108,7 @@ class AimBotThread(
         }
     }
 
-    private fun useAimData(aimData: Long) {
+    private fun useAimData(aimData: Long, config: RuntimeAimSettings) {
         if (aimData == 0L) return resetError()
 
         val dX = calculateDelta(
@@ -118,7 +120,7 @@ class AimBotThread(
             Settings.aimMinTargetHeight, captureCenterY
         )
         if (dX != null && dY != null) {
-            performAim(dX, dY)
+            performAim(dX, dY, config)
         } else {
             resetError()
         }
@@ -155,8 +157,8 @@ class AimBotThread(
         val moveX = (moveXFloat * sensitivityScale * randomSensitivityMultiplier).roundToInt()
         val moveY = (moveYFloat * sensitivityScale * randomSensitivityMultiplier).roundToInt()
 
-        val limitedMoveX = moveX.coerceIn(-maxMoveX, maxMoveX)
-        val limitedMoveY = moveY.coerceIn(-maxMoveY, maxMoveY)
+        val limitedMoveX = moveX.coerceIn(-config.maxMoveX, config.maxMoveX)
+        val limitedMoveY = moveY.coerceIn(-config.maxMoveY, config.maxMoveY)
 
         if (limitedMoveX != 0 || limitedMoveY != 0) {
             Mouse.move(limitedMoveX, limitedMoveY, mouseId)
@@ -200,7 +202,7 @@ class AimBotThread(
             flicking = false
             flickFramesWithinThreshold = 0
             Mouse.click(mouseId)
-            preciseSleeper.preciseSleep(flickPauseNanos)
+            preciseSleeper.preciseSleep(config.flickPauseNanos)
         }
     }
 
