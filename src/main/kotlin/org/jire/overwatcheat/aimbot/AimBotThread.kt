@@ -56,6 +56,8 @@ class AimBotThread(
     private val jitterPercent = Settings.aimJitterPercent
     private val maxMoveX = min(maxSnapX, Settings.aimMaxMovePixels)
     private val maxMoveY = min(maxSnapY, Settings.aimMaxMovePixels)
+    private val flickStabilityFrames = max(1, Settings.flickStabilityFrames)
+    private val flickReadinessAlpha = Settings.flickReadinessAlpha
 
     private var previousErrorX = 0F
     private var previousErrorY = 0F
@@ -166,24 +168,29 @@ class AimBotThread(
     private fun resetError() {
         previousErrorX = 0F
         previousErrorY = 0F
+        smoothedFlickErrorMagnitudeSquared = 0F
+        flickFramesWithinThreshold = 0
     }
 
     private var flickFramesWithinThreshold = 0
+    private var smoothedFlickErrorMagnitudeSquared = 0F
 
-    private fun withinFlickThreshold(errorX: Float, errorY: Float, threshold: Int): Boolean {
-        val thresholdSquared = threshold * threshold
-        return ((errorX * errorX) + (errorY * errorY)) < thresholdSquared
-    }
+    private fun applyFlick(smoothedErrorX: Float, smoothedErrorY: Float) {
+        val errorMagnitudeSquared = (smoothedErrorX * smoothedErrorX) + (smoothedErrorY * smoothedErrorY)
+        smoothedFlickErrorMagnitudeSquared = lerp(
+            smoothedFlickErrorMagnitudeSquared,
+            errorMagnitudeSquared,
+            flickReadinessAlpha
+        )
 
-    private fun applyFlick(rawErrorX: Float, rawErrorY: Float) {
-        val threshold = flickPixels
-        if (withinFlickThreshold(rawErrorX, rawErrorY, threshold)) {
+        val thresholdSquared = flickPixels * flickPixels
+        if (smoothedFlickErrorMagnitudeSquared < thresholdSquared) {
             flickFramesWithinThreshold++
         } else {
             flickFramesWithinThreshold = 0
         }
 
-        if (flicking && flickFramesWithinThreshold >= 2) {
+        if (flicking && flickFramesWithinThreshold >= flickStabilityFrames) {
             flicking = false
             flickFramesWithinThreshold = 0
             Mouse.click(mouseId)
