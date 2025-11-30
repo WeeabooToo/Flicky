@@ -35,7 +35,6 @@ import java.util.concurrent.ThreadLocalRandom
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.abs
 import kotlin.system.measureNanoTime
 
 class AimBotThread(
@@ -159,7 +158,7 @@ class AimBotThread(
             Mouse.move(limitedMoveX, limitedMoveY, mouseId)
         }
 
-        applyFlick(dX, dY)
+        applyFlick(smoothedX, smoothedY)
     }
 
     private fun lerp(start: Float, end: Float, alpha: Float) = start + (end - start) * alpha
@@ -169,15 +168,24 @@ class AimBotThread(
         previousErrorY = 0F
     }
 
+    private var flickFramesWithinThreshold = 0
+
     private fun withinFlickThreshold(errorX: Float, errorY: Float, threshold: Int): Boolean {
-        if (abs(errorX) >= threshold) return false
-        return abs(errorY) < threshold
+        val thresholdSquared = threshold * threshold
+        return ((errorX * errorX) + (errorY * errorY)) < thresholdSquared
     }
 
     private fun applyFlick(rawErrorX: Float, rawErrorY: Float) {
         val threshold = flickPixels
-        if (flicking && withinFlickThreshold(rawErrorX, rawErrorY, threshold)) {
+        if (withinFlickThreshold(rawErrorX, rawErrorY, threshold)) {
+            flickFramesWithinThreshold++
+        } else {
+            flickFramesWithinThreshold = 0
+        }
+
+        if (flicking && flickFramesWithinThreshold >= 2) {
             flicking = false
+            flickFramesWithinThreshold = 0
             Mouse.click(mouseId)
             preciseSleeper.preciseSleep(flickPauseNanos)
         }
