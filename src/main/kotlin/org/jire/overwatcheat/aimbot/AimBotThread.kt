@@ -25,17 +25,13 @@ import org.jire.overwatcheat.Mouse
 import org.jire.overwatcheat.aimbot.AimBotState.aimData
 import org.jire.overwatcheat.aimbot.AimBotState.flicking
 import org.jire.overwatcheat.settings.Settings
-import org.jire.overwatcheat.settings.Settings.aimDurationMillis
-import org.jire.overwatcheat.settings.Settings.aimDurationMultiplierBase
-import org.jire.overwatcheat.settings.Settings.aimDurationMultiplierMax
-import org.jire.overwatcheat.settings.Settings.flickPixels
 import org.jire.overwatcheat.settings.Settings.mouseId
 import org.jire.overwatcheat.util.PreciseSleeper
 import java.util.concurrent.ThreadLocalRandom
+import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.abs
 import kotlin.system.measureNanoTime
 
 class AimBotThread(
@@ -43,20 +39,32 @@ class AimBotThread(
     val maxSnapX: Int, val maxSnapY: Int,
     val preciseSleeper: PreciseSleeper,
     val cpuThreadAffinityIndex: Int,
-    val aimMode: AimMode,
-    val flickPauseNanos: Long,
 ) : Thread("Aim Bot") {
 
-    val aimDurationNanos = (aimDurationMillis * 1_000_000)
+    private val random = FastRandom()
 
-    val random = FastRandom()
+    private data class RuntimeAimSettings(
+        val sensitivityScale: Float,
+        val maxMoveX: Int,
+        val maxMoveY: Int,
+        val flickStabilityFrames: Int,
+        val aimMode: AimMode,
+        val aimDurationNanos: Long,
+        val flickPauseNanos: Long,
+    )
 
-    private val alpha = Settings.alpha
-    private val aimKP = Settings.aimKP
-    private val sensitivityScale = 1F / Settings.sensitivity
-    private val jitterPercent = Settings.aimJitterPercent
-    private val maxMoveX = min(maxSnapX, Settings.aimMaxMovePixels)
-    private val maxMoveY = min(maxSnapY, Settings.aimMaxMovePixels)
+    @Volatile
+    private var runtimeSettings = snapshotSettings()
+
+    private fun snapshotSettings() = RuntimeAimSettings(
+        sensitivityScale = 1F / Settings.sensitivity,
+        maxMoveX = min(maxSnapX, Settings.aimMaxMovePixels),
+        maxMoveY = min(maxSnapY, Settings.aimMaxMovePixels),
+        flickStabilityFrames = max(1, Settings.flickStabilityFrames),
+        aimMode = AimMode[Settings.aimMode] ?: AimMode.TRACKING,
+        aimDurationNanos = (Settings.aimDurationMillis * 1_000_000).toLong(),
+        flickPauseNanos = TimeUnit.MILLISECONDS.toNanos(Settings.flickPause)
+    )
 
     private var previousErrorX = 0F
     private var previousErrorY = 0F
@@ -75,6 +83,8 @@ class AimBotThread(
             else null
         try {
             while (true) {
+                runtimeSettings = snapshotSettings()
+                val config = runtimeSettings
                 val elapsed = measureNanoTime {
                     val pressed = Keyboard.keyPressed(Settings.aimKey)
                     if (Settings.toggleInGameUI && wasPressed != pressed) {
@@ -84,16 +94,16 @@ class AimBotThread(
                     if (!pressed) {
                         aimData = 0
                         return@measureNanoTime
-                    } else if (aimMode.flicks) {
+                    } else if (config.aimMode.flicks) {
                         flicking = true
                     }
-                    useAimData(aimData)
+                    useAimData(aimData, config)
                 }
                 val sleepTimeMultiplier = max(
-                    aimDurationMultiplierMax,
-                    (aimDurationMultiplierBase + tlr.nextFloat())
+                    Settings.aimDurationMultiplierMax,
+                    (Settings.aimDurationMultiplierBase + tlr.nextFloat())
                 )
-                val sleepTime = (aimDurationNanos * sleepTimeMultiplier).toLong() - elapsed
+                val sleepTime = (config.aimDurationNanos * sleepTimeMultiplier).toLong() - elapsed
                 if (sleepTime > 100_000) {
                     preciseSleeper.preciseSleep(sleepTime)
                 }
@@ -103,7 +113,7 @@ class AimBotThread(
         }
     }
 
-    private fun useAimData(aimData: Long) {
+    private fun useAimData(aimData: Long, config: RuntimeAimSettings) {
         if (aimData == 0L) return resetError()
 
         val dX = calculateDelta(
@@ -115,7 +125,7 @@ class AimBotThread(
             Settings.aimMinTargetHeight, captureCenterY
         )
         if (dX != null && dY != null) {
-            performAim(dX, dY)
+            performAim(dX, dY, config)
         } else {
             resetError()
         }
@@ -138,28 +148,28 @@ class AimBotThread(
         return center - deltaSubtrahend
     }
 
-    private fun performAim(dX: Float, dY: Float) {
-        val smoothedX = lerp(previousErrorX, dX, alpha)
-        val smoothedY = lerp(previousErrorY, dY, alpha)
+    private fun performAim(dX: Float, dY: Float, config: RuntimeAimSettings) {
+        val smoothedX = lerp(previousErrorX, dX, Settings.alpha)
+        val smoothedY = lerp(previousErrorY, dY, Settings.alpha)
         previousErrorX = smoothedX
         previousErrorY = smoothedY
 
-        val moveXFloat = smoothedX * aimKP
-        val moveYFloat = smoothedY * aimKP
+        val moveXFloat = smoothedX * Settings.aimKP
+        val moveYFloat = smoothedY * Settings.aimKP
 
         val randomSensitivityMultiplier =
-            if (jitterPercent == 0) 1F else 1F - (random[jitterPercent] / 100F)
-        val moveX = (moveXFloat * sensitivityScale * randomSensitivityMultiplier).roundToInt()
-        val moveY = (moveYFloat * sensitivityScale * randomSensitivityMultiplier).roundToInt()
+            if (Settings.aimJitterPercent == 0) 1F else 1F - (random[Settings.aimJitterPercent] / 100F)
+        val moveX = (moveXFloat * config.sensitivityScale * randomSensitivityMultiplier).roundToInt()
+        val moveY = (moveYFloat * config.sensitivityScale * randomSensitivityMultiplier).roundToInt()
 
-        val limitedMoveX = moveX.coerceIn(-maxMoveX, maxMoveX)
-        val limitedMoveY = moveY.coerceIn(-maxMoveY, maxMoveY)
+        val limitedMoveX = moveX.coerceIn(-config.maxMoveX, config.maxMoveX)
+        val limitedMoveY = moveY.coerceIn(-config.maxMoveY, config.maxMoveY)
 
         if (limitedMoveX != 0 || limitedMoveY != 0) {
             Mouse.move(limitedMoveX, limitedMoveY, mouseId)
         }
 
-        applyFlick(dX, dY)
+        applyFlick(smoothedX, smoothedY, config)
     }
 
     private fun lerp(start: Float, end: Float, alpha: Float) = start + (end - start) * alpha
@@ -167,19 +177,33 @@ class AimBotThread(
     private fun resetError() {
         previousErrorX = 0F
         previousErrorY = 0F
+        smoothedFlickErrorMagnitudeSquared = 0F
+        flickFramesWithinThreshold = 0
     }
 
-    private inline fun withinFlickThreshold(errorX: Float, errorY: Float, threshold: Int): Boolean {
-        if (abs(errorX) >= threshold) return false
-        return abs(errorY) < threshold
-    }
+    private var flickFramesWithinThreshold = 0
+    private var smoothedFlickErrorMagnitudeSquared = 0F
 
-    private fun applyFlick(rawErrorX: Float, rawErrorY: Float) {
-        val threshold = flickPixels
-        if (flicking && withinFlickThreshold(rawErrorX, rawErrorY, threshold)) {
+    private fun applyFlick(smoothedErrorX: Float, smoothedErrorY: Float, config: RuntimeAimSettings) {
+        val errorMagnitudeSquared = (smoothedErrorX * smoothedErrorX) + (smoothedErrorY * smoothedErrorY)
+        smoothedFlickErrorMagnitudeSquared = lerp(
+            smoothedFlickErrorMagnitudeSquared,
+            errorMagnitudeSquared,
+            Settings.flickReadinessAlpha
+        )
+
+        val thresholdSquared = Settings.flickPixels * Settings.flickPixels
+        if (smoothedFlickErrorMagnitudeSquared < thresholdSquared) {
+            flickFramesWithinThreshold++
+        } else {
+            flickFramesWithinThreshold = 0
+        }
+
+        if (flicking && flickFramesWithinThreshold >= config.flickStabilityFrames) {
             flicking = false
+            flickFramesWithinThreshold = 0
             Mouse.click(mouseId)
-            preciseSleeper.preciseSleep(flickPauseNanos)
+            preciseSleeper.preciseSleep(config.flickPauseNanos)
         }
     }
 

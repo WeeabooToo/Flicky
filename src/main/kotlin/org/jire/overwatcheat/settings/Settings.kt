@@ -30,6 +30,8 @@ object Settings {
     val aimKey by IntSetting("aim_key", 1)
     val aimMode by IntSetting("aim_mode", AimMode.TRACKING.type)
     val flickPixels by IntSetting("flick_shoot_pixels", 5)
+    val flickStabilityFrames by IntSetting("flick_stability_frames", 2)
+    val flickReadinessAlpha by FloatSetting("flick_readiness_alpha", 0.6F)
     val flickPause by LongSetting("flick_pause_duration", 300L)
     val sensitivity by FloatSetting("sensitivity", 15.0F)
     val fps by DoubleSetting("fps", 60.0)
@@ -57,12 +59,19 @@ object Settings {
     val aimPreciseSleeperType by IntSetting("aim_precise_sleeper_type", PreciseSleeper.YIELD.type)
     val aimCpuThreadAffinityIndex by IntSetting("aim_cpu_thread_affinity_index", -1)
 
+    private const val DEFAULT_FOLDER_FILE = ".cfg/overwatcheat.cfg"
     const val DEFAULT_FILE = "overwatcheat.cfg"
 
     fun read(filePath: String = DEFAULT_FILE) = read(File(filePath))
 
     fun read(file: File) {
-        file.readLines().forEach {
+        val targetFile = when {
+            file.exists() -> file
+            file.path == DEFAULT_FILE -> File(DEFAULT_FOLDER_FILE).takeIf { it.exists() } ?: file
+            else -> file
+        }
+
+        targetFile.readLines().forEach {
             if (!it.startsWith('#') && it.contains('=')) {
                 val split = it.split("=")
 
@@ -71,6 +80,26 @@ object Settings {
                 val settingValue = split[1]
                 setting.parse(settingValue)
             }
+        }
+    }
+
+    fun update(name: String, value: String) {
+        val setting = nameToSetting[name] ?: return
+        setting.parse(value)
+    }
+
+    fun currentValue(name: String): String {
+        val setting = nameToSetting[name] ?: return ""
+        return when (setting) {
+            is IntSetting -> setting.value.toString()
+            is LongSetting -> setting.value.toString()
+            is FloatSetting -> setting.value.toString()
+            is DoubleSetting -> setting.value.toString()
+            is BooleanSetting -> setting.value.toString()
+            is StringSetting -> setting.value
+            is IntArraySetting -> setting.value.joinToString(",")
+            is HexIntArraySetting -> setting.value.joinToString(",") { Integer.toHexString(it) }
+            else -> ""
         }
     }
 
