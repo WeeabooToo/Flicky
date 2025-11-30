@@ -40,24 +40,40 @@ import kotlin.system.measureNanoTime
 class AimBotThread(
     val captureCenterX: Int, val captureCenterY: Int,
     val maxSnapX: Int, val maxSnapY: Int,
-    val preciseSleeper: PreciseSleeper,
+    var preciseSleeper: PreciseSleeper,
     val cpuThreadAffinityIndex: Int,
-    val aimMode: AimMode,
-    val flickPauseNanos: Long,
+    var aimMode: AimMode,
+    var flickPauseNanos: Long,
 ) : Thread("Aim Bot") {
 
-    val aimDurationNanos = (aimDurationMillis * 1_000_000)
+    @Volatile
+    var aimDurationNanos = (aimDurationMillis * 1_000_000)
 
     val random = FastRandom()
 
-    private val alpha = Settings.alpha
-    private val aimKP = Settings.aimKP
-    private val sensitivityScale = 1F / Settings.sensitivity
-    private val jitterPercent = Settings.aimJitterPercent
-    private val maxMoveX = min(maxSnapX, Settings.aimMaxMovePixels)
-    private val maxMoveY = min(maxSnapY, Settings.aimMaxMovePixels)
-    private val flickStabilityFrames = max(1, Settings.flickStabilityFrames)
-    private val flickReadinessAlpha = Settings.flickReadinessAlpha
+    @Volatile
+    private var alpha = Settings.alpha
+
+    @Volatile
+    private var aimKP = Settings.aimKP
+
+    @Volatile
+    private var sensitivityScale = 1F / Settings.sensitivity
+
+    @Volatile
+    private var jitterPercent = Settings.aimJitterPercent
+
+    @Volatile
+    private var maxMoveX = min(maxSnapX, Settings.aimMaxMovePixels)
+
+    @Volatile
+    private var maxMoveY = min(maxSnapY, Settings.aimMaxMovePixels)
+
+    @Volatile
+    private var flickStabilityFrames = max(1, Settings.flickStabilityFrames)
+
+    @Volatile
+    private var flickReadinessAlpha = Settings.flickReadinessAlpha
 
     private var previousErrorX = 0F
     private var previousErrorY = 0F
@@ -196,6 +212,21 @@ class AimBotThread(
             Mouse.click(mouseId)
             preciseSleeper.preciseSleep(flickPauseNanos)
         }
+    }
+
+    fun refreshFromSettings() {
+        alpha = Settings.alpha
+        aimKP = Settings.aimKP
+        sensitivityScale = 1F / Settings.sensitivity
+        jitterPercent = Settings.aimJitterPercent
+        maxMoveX = min(maxSnapX, Settings.aimMaxMovePixels)
+        maxMoveY = min(maxSnapY, Settings.aimMaxMovePixels)
+        flickStabilityFrames = max(1, Settings.flickStabilityFrames)
+        flickReadinessAlpha = Settings.flickReadinessAlpha
+        aimDurationNanos = (Settings.aimDurationMillis * 1_000_000)
+        flickPauseNanos = java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(Settings.flickPause)
+        aimMode = AimMode[Settings.aimMode] ?: aimMode
+        preciseSleeper = PreciseSleeper[Settings.aimPreciseSleeperType] ?: preciseSleeper
     }
 
 }

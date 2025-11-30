@@ -51,4 +51,9 @@ class AimColorMatcher {
 
     fun colorMatches(rgb: Int) = matchSet.contains(rgb)
 
+    fun refreshMatchSet() {
+        matchSet.clear()
+        initializeMatchSet()
+    }
+
 }
