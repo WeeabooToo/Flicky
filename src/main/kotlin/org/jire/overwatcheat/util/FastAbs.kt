@@ -20,14 +20,12 @@ package org.jire.overwatcheat.util
 
 object FastAbs {
 
-    @Suppress("NOTHING_TO_INLINE")
-    inline operator fun invoke(value: Int): Int {
+    operator fun invoke(value: Int): Int {
         val mask = value shr 31
         return (value xor mask) - mask
     }
 
-    @Suppress("NOTHING_TO_INLINE")
-    inline operator fun invoke(value: Long): Long {
+    operator fun invoke(value: Long): Long {
         val mask = value shr 63
         return (value xor mask) - mask
     }

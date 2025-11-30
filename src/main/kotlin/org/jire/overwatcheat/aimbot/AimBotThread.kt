@@ -35,7 +35,6 @@ import java.util.concurrent.ThreadLocalRandom
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.abs
 import kotlin.system.measureNanoTime
 
 class AimBotThread(
@@ -57,6 +56,8 @@ class AimBotThread(
     private val jitterPercent = Settings.aimJitterPercent
     private val maxMoveX = min(maxSnapX, Settings.aimMaxMovePixels)
     private val maxMoveY = min(maxSnapY, Settings.aimMaxMovePixels)
+    private val flickStabilityFrames = max(1, Settings.flickStabilityFrames)
+    private val flickReadinessAlpha = Settings.flickReadinessAlpha
 
     private var previousErrorX = 0F
     private var previousErrorY = 0F
@@ -159,7 +160,7 @@ class AimBotThread(
             Mouse.move(limitedMoveX, limitedMoveY, mouseId)
         }
 
-        applyFlick(dX, dY)
+        applyFlick(smoothedX, smoothedY)
     }
 
     private fun lerp(start: Float, end: Float, alpha: Float) = start + (end - start) * alpha
@@ -167,17 +168,31 @@ class AimBotThread(
     private fun resetError() {
         previousErrorX = 0F
         previousErrorY = 0F
+        smoothedFlickErrorMagnitudeSquared = 0F
+        flickFramesWithinThreshold = 0
     }
 
-    private inline fun withinFlickThreshold(errorX: Float, errorY: Float, threshold: Int): Boolean {
-        if (abs(errorX) >= threshold) return false
-        return abs(errorY) < threshold
-    }
+    private var flickFramesWithinThreshold = 0
+    private var smoothedFlickErrorMagnitudeSquared = 0F
 
-    private fun applyFlick(rawErrorX: Float, rawErrorY: Float) {
-        val threshold = flickPixels
-        if (flicking && withinFlickThreshold(rawErrorX, rawErrorY, threshold)) {
+    private fun applyFlick(smoothedErrorX: Float, smoothedErrorY: Float) {
+        val errorMagnitudeSquared = (smoothedErrorX * smoothedErrorX) + (smoothedErrorY * smoothedErrorY)
+        smoothedFlickErrorMagnitudeSquared = lerp(
+            smoothedFlickErrorMagnitudeSquared,
+            errorMagnitudeSquared,
+            flickReadinessAlpha
+        )
+
+        val thresholdSquared = flickPixels * flickPixels
+        if (smoothedFlickErrorMagnitudeSquared < thresholdSquared) {
+            flickFramesWithinThreshold++
+        } else {
+            flickFramesWithinThreshold = 0
+        }
+
+        if (flicking && flickFramesWithinThreshold >= flickStabilityFrames) {
             flicking = false
+            flickFramesWithinThreshold = 0
             Mouse.click(mouseId)
             preciseSleeper.preciseSleep(flickPauseNanos)
         }
