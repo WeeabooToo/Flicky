@@ -169,7 +169,7 @@ class AimBotThread(
         previousErrorY = 0F
     }
 
-    private inline fun withinFlickThreshold(errorX: Float, errorY: Float, threshold: Int): Boolean {
+    private fun withinFlickThreshold(errorX: Float, errorY: Float, threshold: Int): Boolean {
         if (abs(errorX) >= threshold) return false
         return abs(errorY) < threshold
     }
