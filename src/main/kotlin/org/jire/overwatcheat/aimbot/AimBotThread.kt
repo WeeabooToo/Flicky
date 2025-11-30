@@ -159,7 +159,7 @@ class AimBotThread(
             Mouse.move(limitedMoveX, limitedMoveY, mouseId)
         }
 
-        applyFlick(smoothedX, smoothedY)
+        applyFlick(dX, dY)
     }
 
     private fun lerp(start: Float, end: Float, alpha: Float) = start + (end - start) * alpha
@@ -174,9 +174,9 @@ class AimBotThread(
         return abs(errorY) < threshold
     }
 
-    private fun applyFlick(errorX: Float, errorY: Float) {
+    private fun applyFlick(rawErrorX: Float, rawErrorY: Float) {
         val threshold = flickPixels
-        if (flicking && withinFlickThreshold(errorX, errorY, threshold)) {
+        if (flicking && withinFlickThreshold(rawErrorX, rawErrorY, threshold)) {
             flicking = false
             Mouse.click(mouseId)
             preciseSleeper.preciseSleep(flickPauseNanos)
