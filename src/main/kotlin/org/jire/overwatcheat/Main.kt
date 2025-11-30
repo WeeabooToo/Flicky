@@ -26,6 +26,7 @@ import org.jire.overwatcheat.framegrab.FrameGrabberThread
 import org.jire.overwatcheat.framegrab.FrameHandler
 import org.jire.overwatcheat.nativelib.Kernel32
 import org.jire.overwatcheat.settings.Settings
+import org.jire.overwatcheat.settings.ui.SettingsWindow
 import org.jire.overwatcheat.util.PreciseSleeper
 import java.util.concurrent.TimeUnit
 
@@ -82,6 +83,8 @@ object Main {
             aimMode,
             TimeUnit.MILLISECONDS.toNanos(Settings.flickPause)
         )
+
+        SettingsWindow(aimColorMatcher, aimBotThread).show()
 
         frameGrabberThread.start()
         toggleUIThread.start()

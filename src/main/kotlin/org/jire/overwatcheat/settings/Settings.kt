@@ -83,4 +83,38 @@ object Settings {
         }
     }
 
+    fun write(filePath: String = DEFAULT_FILE) {
+        val file = File(filePath)
+        val lines = (file.takeIf { it.exists() } ?: File(DEFAULT_FOLDER_FILE).takeIf { it.exists() } ?: file)
+            .takeIf { it.exists() }
+            ?.readLines()
+            ?: emptyList()
+
+        val updatedLines = lines.map { line ->
+            if (line.startsWith('#') || !line.contains('=')) return@map line
+
+            val split = line.split("=", limit = 2)
+            val settingName = split[0]
+            val setting = nameToSetting[settingName] ?: return@map line
+            val newValue = settingToString(setting)
+            "$settingName=$newValue"
+        }
+
+        if (updatedLines.isNotEmpty()) {
+            file.writeText(updatedLines.joinToString(System.lineSeparator()))
+        }
+    }
+
+    private fun settingToString(setting: Setting) = when (setting) {
+        is BooleanSetting -> setting.value.toString()
+        is DoubleSetting -> setting.value.toString()
+        is FloatSetting -> setting.value.toString()
+        is IntSetting -> setting.value.toString()
+        is LongSetting -> setting.value.toString()
+        is StringSetting -> setting.value
+        is IntArraySetting -> setting.value.joinToString(",")
+        is HexIntArraySetting -> setting.value.joinToString(",") { Integer.toHexString(it).uppercase() }
+        else -> ""
+    }
+
 }
