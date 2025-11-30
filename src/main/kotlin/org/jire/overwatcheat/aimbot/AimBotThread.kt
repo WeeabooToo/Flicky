@@ -30,12 +30,12 @@ import org.jire.overwatcheat.settings.Settings.aimDurationMultiplierBase
 import org.jire.overwatcheat.settings.Settings.aimDurationMultiplierMax
 import org.jire.overwatcheat.settings.Settings.flickPixels
 import org.jire.overwatcheat.settings.Settings.mouseId
-import org.jire.overwatcheat.util.FastAbs
 import org.jire.overwatcheat.util.PreciseSleeper
 import java.util.concurrent.ThreadLocalRandom
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.abs
 import kotlin.system.measureNanoTime
 
 class AimBotThread(
@@ -159,7 +159,7 @@ class AimBotThread(
             Mouse.move(limitedMoveX, limitedMoveY, mouseId)
         }
 
-        applyFlick(limitedMoveX, limitedMoveY)
+        applyFlick(dX, dY)
     }
 
     private fun lerp(start: Float, end: Float, alpha: Float) = start + (end - start) * alpha
@@ -169,14 +169,14 @@ class AimBotThread(
         previousErrorY = 0F
     }
 
-    private inline fun withinFlickThreshold(moveX: Int, moveY: Int, threshold: Int): Boolean {
-        if (FastAbs(moveX) >= threshold) return false
-        return FastAbs(moveY) < threshold
+    private inline fun withinFlickThreshold(errorX: Float, errorY: Float, threshold: Int): Boolean {
+        if (abs(errorX) >= threshold) return false
+        return abs(errorY) < threshold
     }
 
-    private fun applyFlick(moveX: Int, moveY: Int) {
+    private fun applyFlick(rawErrorX: Float, rawErrorY: Float) {
         val threshold = flickPixels
-        if (flicking && withinFlickThreshold(moveX, moveY, threshold)) {
+        if (flicking && withinFlickThreshold(rawErrorX, rawErrorY, threshold)) {
             flicking = false
             Mouse.click(mouseId)
             preciseSleeper.preciseSleep(flickPauseNanos)
