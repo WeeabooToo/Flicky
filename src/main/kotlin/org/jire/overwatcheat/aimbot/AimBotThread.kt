@@ -106,7 +106,7 @@ class AimBotThread(
                     }
                     useAimData(aimData)
                 }
-                val sleepTimeMultiplier = max(
+                val sleepTimeMultiplier = min(
                     aimDurationMultiplierMax,
                     (aimDurationMultiplierBase + tlr.nextFloat())
                 )
