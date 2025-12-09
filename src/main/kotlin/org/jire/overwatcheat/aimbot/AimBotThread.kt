@@ -123,16 +123,23 @@ class AimBotThread(
     private fun useAimData(aimData: Long) {
         if (aimData == 0L) return resetError()
 
+        val xLow = extractAimData(aimData, 48).toInt()
+        val xHigh = extractAimData(aimData, 32).toInt()
+        val yLow = extractAimData(aimData, 16).toInt()
+        val yHigh = extractAimData(aimData, 0).toInt()
+
         val dX = calculateDelta(
-            aimData, 48,
+            xLow, xHigh,
             Settings.aimMinTargetWidth, captureCenterX
         )
         val dY = calculateDelta(
-            aimData, 16,
+            yLow, yHigh,
             Settings.aimMinTargetHeight, captureCenterY
         )
+        val aimWithinTarget = captureCenterX in xLow..xHigh && captureCenterY in yLow..yHigh
+
         if (dX != null && dY != null) {
-            performAim(dX, dY)
+            performAim(dX, dY, aimWithinTarget)
         } else {
             resetError()
         }
@@ -140,13 +147,11 @@ class AimBotThread(
 
     private fun extractAimData(aimData: Long, shiftBits: Int) = (aimData ushr shiftBits) and 0xFFFF
     private fun calculateDelta(
-        aimData: Long,
-        shiftBitsBase: Int,
+        low: Int,
+        high: Int,
         minimumSize: Int,
         deltaSubtrahend: Int
     ): Float? {
-        val low = extractAimData(aimData, shiftBitsBase)
-        val high = extractAimData(aimData, shiftBitsBase - 16)
         val size = high - low
         if (size < minimumSize) return null
 
@@ -155,7 +160,7 @@ class AimBotThread(
         return center - deltaSubtrahend
     }
 
-    private fun performAim(dX: Float, dY: Float) {
+    private fun performAim(dX: Float, dY: Float, aimWithinTarget: Boolean) {
         val smoothedX = lerp(previousErrorX, dX, alpha)
         val smoothedY = lerp(previousErrorY, dY, alpha)
         previousErrorX = smoothedX
@@ -176,7 +181,7 @@ class AimBotThread(
             Mouse.move(limitedMoveX, limitedMoveY, mouseId)
         }
 
-        applyFlick(smoothedX, smoothedY)
+        applyFlick(smoothedX, smoothedY, aimWithinTarget)
     }
 
     private fun lerp(start: Float, end: Float, alpha: Float) = start + (end - start) * alpha
@@ -191,8 +196,9 @@ class AimBotThread(
     private var flickFramesWithinThreshold = 0
     private var smoothedFlickErrorMagnitudeSquared = 0F
 
-    private fun applyFlick(smoothedErrorX: Float, smoothedErrorY: Float) {
-        val errorMagnitudeSquared = (smoothedErrorX * smoothedErrorX) + (smoothedErrorY * smoothedErrorY)
+    private fun applyFlick(smoothedErrorX: Float, smoothedErrorY: Float, aimWithinTarget: Boolean) {
+        val errorMagnitudeSquared =
+            if (aimWithinTarget) 0F else (smoothedErrorX * smoothedErrorX) + (smoothedErrorY * smoothedErrorY)
         smoothedFlickErrorMagnitudeSquared = lerp(
             smoothedFlickErrorMagnitudeSquared,
             errorMagnitudeSquared,
