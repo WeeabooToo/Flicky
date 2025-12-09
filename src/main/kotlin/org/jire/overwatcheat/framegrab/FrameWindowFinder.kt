@@ -26,16 +26,16 @@ object FrameWindowFinder {
 
     private const val WINDOW_TITLE_BYTES_SIZE = 512
 
-    private var windowTitle: CharSequence? = null
-
     fun findWindowTitle(windowTitleSearch: String): CharSequence {
+        var windowTitle: CharSequence? = null
+
         /* First iterate using equals */
         User32.EnumWindows({ hwnd, _ ->
             val windowTitleBytes = ByteArray(WINDOW_TITLE_BYTES_SIZE)
             User32.GetWindowTextA(hwnd.pointer, windowTitleBytes, windowTitleBytes.size)
-            val windowTitle = Native.toString(windowTitleBytes).trim { it <= ' ' }
-            if (windowTitle.equals(windowTitleSearch, true)) {
-                FrameWindowFinder.windowTitle = windowTitle
+            val currentWindowTitle = Native.toString(windowTitleBytes).trim { it <= ' ' }
+            if (currentWindowTitle.equals(windowTitleSearch, true)) {
+                windowTitle = currentWindowTitle
             }
             true
         }, Pointer.NULL)
@@ -45,9 +45,9 @@ object FrameWindowFinder {
         User32.EnumWindows({ hwnd, _ ->
             val windowTitleBytes = ByteArray(WINDOW_TITLE_BYTES_SIZE)
             User32.GetWindowTextA(hwnd.pointer, windowTitleBytes, windowTitleBytes.size)
-            val windowTitle = Native.toString(windowTitleBytes).trim { it <= ' ' }
-            if (windowTitle.contains(windowTitleSearch)) {
-                FrameWindowFinder.windowTitle = windowTitle
+            val currentWindowTitle = Native.toString(windowTitleBytes).trim { it <= ' ' }
+            if (currentWindowTitle.contains(windowTitleSearch)) {
+                windowTitle = currentWindowTitle
             }
             true
         }, Pointer.NULL)
